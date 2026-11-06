@@ -328,19 +328,19 @@ export function Table({ headers, children }) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-xs sm:text-sm text-left text-gray-700">
-        <thead className="text-xs text-white uppercase bg-[#264624]">
+        <thead className="text-[11px] text-[#1e3a1c] uppercase bg-[#eef4ea] border-b border-[#dbe5d4]">
           <tr>
             {headers.map((h, i) => (
               <th
                 key={i}
-                className="px-4 py-3.5 font-bold tracking-wider whitespace-nowrap"
+                className="px-4 py-3 font-bold tracking-wider whitespace-nowrap"
               >
                 {h}
               </th>
             ))}
           </tr>
         </thead>
-        <tbody className="divide-y divide-gray-100 [&>tr:nth-child(odd)]:bg-[#e4efe0]/60 [&>tr:hover]:bg-[#d2e4cb]/70 transition-colors">
+        <tbody className="divide-y divide-gray-100 [&>tr:hover]:bg-[#f4f8f1] transition-colors">
           {children}
         </tbody>
       </table>
@@ -379,25 +379,70 @@ export function DecorativeWave() {
   );
 }
 
-export function StatCard({ label, value, icon, small }) {
+// ===== STAT CARD MINI (gaya "Over View" pada referensi) =====
+// tone: "green" (default) | "orange" (perlu perhatian) | "blue" | "slate"
+const STAT_TONES = {
+  green: {
+    box: "bg-white border-[#d6e4c8]",
+    icon: "bg-[#e9f2e1] border-[#b7d4a5] text-[#264624]",
+  },
+  orange: {
+    box: "bg-[#fdf1ea] border-[#f3cdb5]",
+    icon: "bg-white border-[#f3cdb5] text-[#c2622d]",
+  },
+  blue: {
+    box: "bg-white border-[#cfe0ea]",
+    icon: "bg-[#e8f1f7] border-[#bcd5e5] text-[#2f5f7f]",
+  },
+  slate: {
+    box: "bg-white border-gray-200",
+    icon: "bg-gray-50 border-gray-200 text-gray-700",
+  },
+};
+
+export function StatCard({ label, value, icon, small, tone = "green", hint, onClick }) {
+  const t = STAT_TONES[tone] || STAT_TONES.green;
+  const Wrapper = onClick ? "button" : "div";
   return (
-    <div className="relative bg-white rounded-2xl px-4 sm:px-5 pt-4 sm:pt-5 pb-8 shadow-sm border border-gray-200/80 hover:shadow-md transition-all overflow-hidden flex items-center gap-3.5">
-      <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-[#264624] text-white flex items-center justify-center flex-shrink-0 shadow-xs">
+    <Wrapper
+      type={onClick ? "button" : undefined}
+      onClick={onClick}
+      className={`relative w-full text-left rounded-2xl border px-4 py-3.5 flex items-center gap-3.5 transition-all hover:shadow-md ${t.box} ${
+        onClick ? "cursor-pointer" : ""
+      }`}
+    >
+      <div className={`w-11 h-11 sm:w-12 sm:h-12 rounded-xl border flex items-center justify-center flex-shrink-0 ${t.icon}`}>
         {icon}
       </div>
-      <div className="min-w-0 flex-1 text-center sm:text-left">
-        <p
-          className={`${
-            small ? "text-base sm:text-lg" : "text-2xl sm:text-3xl"
-          } font-extrabold text-gray-900 truncate leading-tight`}
-        >
+      <div className="min-w-0 flex-1">
+        <p className={`${small ? "text-base sm:text-lg" : "text-xl sm:text-2xl"} font-extrabold text-gray-900 truncate leading-tight`}>
           {value}
         </p>
-        <p className="font-serif text-xs sm:text-sm font-bold text-gray-800 mt-0.5 truncate">
-          {label}
-        </p>
+        <p className="text-xs sm:text-[13px] text-gray-600 font-medium truncate">{label}</p>
       </div>
-      <DecorativeWave />
-    </div>
+      {hint && (
+        <span
+          title={hint}
+          className="absolute -bottom-2 -right-2 w-5 h-5 rounded-full bg-gray-800 text-white text-[10px] font-bold flex items-center justify-center shadow"
+        >
+          i
+        </span>
+      )}
+    </Wrapper>
+  );
+}
+
+// ===== PANEL (kartu putih berjudul untuk dashboard) =====
+export function Panel({ title, action, children, className = "", bodyClassName = "" }) {
+  return (
+    <section className={`bg-white rounded-2xl border border-[#dbe5d4] shadow-[0_1px_2px_rgba(0,0,0,0.04)] flex flex-col ${className}`}>
+      {(title || action) && (
+        <div className="flex items-center justify-between gap-3 px-4 sm:px-5 pt-4 pb-2">
+          {title && <h3 className="text-sm sm:text-base font-bold text-[#1e3a1c]">{title}</h3>}
+          {action && <div className="flex items-center gap-2 text-xs">{action}</div>}
+        </div>
+      )}
+      <div className={`px-4 sm:px-5 pb-4 flex-1 ${bodyClassName}`}>{children}</div>
+    </section>
   );
 }

@@ -1,20 +1,29 @@
-import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { getKamar } from "../../_sevices/kamar";
 import { getKontrakSewa } from "../../_sevices/kontrakSewa";
 import { getTagihan } from "../../_sevices/tagihan";
+import { getPembayaran } from "../../_sevices/pembayaran";
 import { getPengumuman } from "../../_sevices/pengumuman";
 import { getLaporan } from "../../_sevices/laporan";
 import { imageStorage } from "../../_api";
 import BookingKamarModal from "../../components/BookingKamarModal";
 import {
   Loading,
+  Panel,
   StatCard,
   StatusBadge,
   Table,
   formatRupiah,
   formatTanggal,
 } from "../../components/ui";
+import {
+  ChartLegend,
+  LineChart,
+  PieChart,
+  lastMonths,
+  sumByMonth,
+} from "../../components/charts";
 
 const FALLBACK_ROOM =
   "https://images.unsplash.com/photo-1522771739844-6a9f6d5f14af?auto=format&fit=crop&w=800&q=80";
@@ -28,11 +37,30 @@ const hitungSisaHari = (tglSelesai) => {
   return Math.ceil((end - now) / (1000 * 60 * 60 * 24));
 };
 
+const ICON = {
+  kamar:
+    "M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4",
+  clock:
+    "M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z",
+  bill:
+    "M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2z",
+  chat:
+    "M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z",
+};
+
+const Svg = ({ d, className = "w-6 h-6" }) => (
+  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={d} />
+  </svg>
+);
+
 export default function DashboardPenyewa() {
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [kamarList, setKamarList] = useState([]);
   const [kontrak, setKontrak] = useState([]);
   const [tagihan, setTagihan] = useState([]);
+  const [pembayaran, setPembayaran] = useState([]);
   const [pengumuman, setPengumuman] = useState([]);
   const [laporan, setLaporan] = useState([]);
   const [bookingKamar, setBookingKamar] = useState(null);
@@ -43,13 +71,15 @@ export default function DashboardPenyewa() {
       getKamar().catch(() => []),
       getKontrakSewa().catch(() => []),
       getTagihan().catch(() => []),
+      getPembayaran().catch(() => []),
       getPengumuman().catch(() => []),
       getLaporan().catch(() => []),
     ])
-      .then(([kmr, ktr, tgh, pgm, lap]) => {
+      .then(([kmr, ktr, tgh, pmb, pgm, lap]) => {
         setKamarList((kmr || []).filter((x) => x.status_kamar === "tersedia"));
         setKontrak(ktr || []);
         setTagihan(tgh || []);
+        setPembayaran(pmb || []);
         setPengumuman((pgm || []).filter((x) => x.status === "terbit"));
         setLaporan(lap || []);
       })
@@ -59,6 +89,30 @@ export default function DashboardPenyewa() {
   useEffect(() => {
     loadData();
   }, []);
+
+  const months = useMemo(() => lastMonths(6), []);
+
+  const totalTagihanBulanan = useMemo(
+    () =>
+      sumByMonth(
+        tagihan,
+        months,
+        (t) => t.tanggal_terbit || t.created_at,
+        (t) => t.jumlah_tagihan
+      ),
+    [tagihan, months]
+  );
+
+  const totalBayarBulanan = useMemo(
+    () =>
+      sumByMonth(
+        pembayaran.filter((p) => p.status_pembayaran === "diterima"),
+        months,
+        (p) => p.tanggal_bayar || p.created_at,
+        (p) => p.jumlah_bayar
+      ),
+    [pembayaran, months]
+  );
 
   if (loading) return <Loading text="Memuat Portal Penghuni Kos..." />;
 
@@ -72,9 +126,10 @@ export default function DashboardPenyewa() {
   const tagihanBelumBayar = tagihan.filter((t) =>
     ["belum_bayar", "sebagian"].includes(t.status_tagihan)
   );
+  const tagihanLunas = tagihan.filter((t) => t.status_tagihan === "lunas");
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* ================= NOTIFIKASI PERINGATAN MASA SEWA AKAN HABIS ================= */}
       {kontrakAktif && sisaHariSewa !== null && sisaHariSewa <= 14 && (
         <div
@@ -99,16 +154,16 @@ export default function DashboardPenyewa() {
           </div>
           <Link
             to="/penyewa/chat"
-            className="px-4 py-2 rounded-xl bg-[#264624] hover:bg-[#3b6e38] text-white text-xs font-bold whitespace-nowrap self-start sm:self-center"
+            className="px-4 py-2 rounded-xl bg-[#264624] hover:bg-[#3b6e38] text-white text-xs font-bold whitespace-nowrap self-start sm:self-center cursor-pointer"
           >
-            💬 Hubungi Admin Sekarang
+            💬 Hubungi Admin
           </Link>
         </div>
       )}
 
       {/* ================= BANNER STATUS BOOKING MENUNGGU KONFIRMASI ADMIN ================= */}
       {kontrakMenunggu && (
-        <div className="bg-white rounded-2xl p-4 sm:p-5 border-l-4 border-[#3b6e38] shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="bg-white rounded-2xl p-4 sm:p-5 border-l-4 border-amber-500 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="space-y-1">
             <span className="inline-block text-[10px] font-bold uppercase tracking-wider bg-amber-100 text-amber-800 px-2.5 py-0.5 rounded-full">
               Menunggu Konfirmasi Admin
@@ -139,110 +194,130 @@ export default function DashboardPenyewa() {
         </div>
       )}
 
-      {/* ================= 4 STAT CARDS DENGAN GELOMBANG (Sesuai Referensi Gambar) ================= */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard
-          small
-          label="Kamar Saya"
-          value={
-            kontrakUtama
-              ? `Kamar ${kontrakUtama.kamar?.nomor_kamar}`
-              : "Belum Sewa"
-          }
-          icon={
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-            </svg>
-          }
-        />
-        <StatCard
-          small
-          label="Sisa Masa Sewa"
-          value={
-            sisaHariSewa !== null
-              ? sisaHariSewa >= 0
-                ? `${sisaHariSewa} Hari`
-                : "Habis"
-              : kontrakMenunggu
-              ? "Menunggu"
-              : "—"
-          }
-          icon={
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-          }
-        />
-        <StatCard
-          label="Tagihan Aktif"
-          value={tagihanBelumBayar.length}
-          icon={
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2z" />
-            </svg>
-          }
-        />
-        <StatCard
-          label="Laporan Keluhan"
-          value={laporan.length}
-          icon={
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-            </svg>
-          }
-        />
+      {/* ================= RINGKASAN (Over View) ================= */}
+      <Panel title="Ringkasan Sewa Saya">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4 pt-1">
+          <StatCard
+            label="Kamar Saya"
+            value={kontrakUtama ? `Kamar ${kontrakUtama.kamar?.nomor_kamar || "-"}` : "Belum Sewa"}
+            icon={<Svg d={ICON.kamar} />}
+            onClick={() => navigate("/penyewa/kontrak-sewa")}
+          />
+          <StatCard
+            label="Sisa Masa Sewa"
+            value={
+              sisaHariSewa !== null
+                ? sisaHariSewa >= 0
+                  ? `${sisaHariSewa} Hari`
+                  : "Habis"
+                : kontrakMenunggu
+                ? "Menunggu"
+                : "—"
+            }
+            tone={sisaHariSewa !== null && sisaHariSewa <= 14 ? "orange" : "green"}
+            icon={<Svg d={ICON.clock} />}
+            onClick={() => navigate("/penyewa/kontrak-sewa")}
+          />
+          <StatCard
+            label="Tagihan Perlu Dibayar"
+            value={tagihanBelumBayar.length}
+            tone={tagihanBelumBayar.length > 0 ? "orange" : "green"}
+            icon={<Svg d={ICON.bill} />}
+            onClick={() => navigate("/penyewa/tagihan")}
+          />
+          <StatCard
+            label="Layanan & Keluhan"
+            value={laporan.length}
+            icon={<Svg d={ICON.chat} />}
+            onClick={() => navigate("/penyewa/laporan")}
+          />
+        </div>
+      </Panel>
+
+      {/* ================= BARIS GRAFIK & STATISTIK ================= */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+        {/* Status Pembayaran Tagihan (Pie Chart) */}
+        <Panel title="Status Tagihan Saya" className="lg:col-span-5">
+          <div className="flex flex-col sm:flex-row items-center justify-around gap-5 py-2 h-full">
+            <PieChart
+              size={150}
+              data={[
+                { label: "Lunas", value: tagihanLunas.length, color: "#264624" },
+                { label: "Belum Lunas", value: tagihanBelumBayar.length, color: "#c2622d" },
+              ]}
+            />
+            <ChartLegend
+              items={[
+                { label: "Tagihan Lunas", value: tagihanLunas.length, color: "#264624" },
+                { label: "Perlu Dibayar", value: tagihanBelumBayar.length, color: "#c2622d" },
+              ]}
+            />
+          </div>
+        </Panel>
+
+        {/* Riwayat Tagihan vs Pembayaran (Line Chart) */}
+        <Panel
+          title="Riwayat Tagihan & Pembayaran"
+          className="lg:col-span-7"
+          action={<span className="text-gray-500 font-medium">6 bulan terakhir</span>}
+        >
+          <div className="flex items-center gap-4 text-xs pb-1">
+            <span className="flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded-full bg-[#3b6e38]" /> Pembayaran Diterima
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded-full bg-[#c2622d]" /> Tagihan Terbit
+            </span>
+          </div>
+          <LineChart
+            labels={months.map((m) => m.label)}
+            series={[
+              { label: "Tagihan", color: "#c2622d", values: totalTagihanBulanan },
+              { label: "Pembayaran", color: "#3b6e38", values: totalBayarBulanan },
+            ]}
+          />
+        </Panel>
       </div>
 
-      {/* ================= KATALOG KAMAR TERSEDIA & FASILITAS (UNTUK BOOKING LANGSUNG) ================= */}
+      {/* ================= KATALOG KAMAR TERSEDIA (JIKA BELUM MEMILIKI KAMAR AKTIF) ================= */}
       {!kontrakAktif && (
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-200/80 overflow-hidden">
-          <div className="bg-[#264624] text-white px-5 py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-            <div>
-              <h3 className="font-serif text-base sm:text-lg font-bold">
-                Pilihan Kamar Tersedia & Fasilitasnya
-              </h3>
-              <p className="text-xs text-green-100/85">
-                Pilih kamar yang Anda inginkan, lakukan booking (Cash / Transfer), atau tanya Admin via Ruang Chat
-              </p>
-            </div>
+        <Panel
+          title="Pilihan Kamar Tersedia & Fasilitas"
+          action={
             <Link
               to="/penyewa/chat"
-              className="px-4 py-1.5 rounded-full bg-white text-[#264624] text-xs font-extrabold self-start sm:self-center"
+              className="px-3.5 py-1.5 rounded-full bg-[#264624] text-white text-xs font-bold hover:bg-[#3b6e38] transition-colors"
             >
               💬 Tanya Admin di Chat
             </Link>
-          </div>
-
-          <div className="p-5">
+          }
+        >
+          <div className="pt-2">
             {kamarList.length === 0 ? (
               <p className="text-center text-xs text-gray-400 py-8">
                 Saat ini seluruh kamar sedang terisi. Silakan hubungi Admin melalui Ruang Chat.
               </p>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
                 {kamarList.map((k) => (
                   <div
                     key={k.id}
-                    className="rounded-2xl border border-gray-200 overflow-hidden bg-[#fafaf5] flex flex-col justify-between hover:shadow-md transition-all"
+                    className="rounded-2xl border border-[#dbe5d4] overflow-hidden bg-[#fafaf5] flex flex-col justify-between hover:shadow-md transition-all"
                   >
                     <div>
                       <div className="relative h-44 bg-gray-200">
                         <img
-                          src={
-                            k.foto_utama
-                              ? imageStorage(k.foto_utama)
-                              : FALLBACK_ROOM
-                          }
+                          src={k.foto_utama ? imageStorage(k.foto_utama) : FALLBACK_ROOM}
                           alt={`Kamar ${k.nomor_kamar}`}
                           className="w-full h-full object-cover"
                           onError={(e) => {
                             e.target.src = FALLBACK_ROOM;
                           }}
                         />
-                        <span className="absolute top-3 left-3 bg-[#264624] text-white text-[11px] font-bold px-2.5 py-0.5 rounded-full">
+                        <span className="absolute top-3 left-3 bg-[#264624] text-white text-[11px] font-bold px-2.5 py-0.5 rounded-full shadow">
                           Lantai {k.lantai}
                         </span>
-                        <span className="absolute top-3 right-3 bg-white/95 text-[#264624] text-[11px] font-bold px-2.5 py-0.5 rounded-full">
+                        <span className="absolute top-3 right-3 bg-white/95 text-[#264624] text-[11px] font-bold px-2.5 py-0.5 rounded-full shadow">
                           {k.tipe_kamar}
                         </span>
                       </div>
@@ -298,39 +373,37 @@ export default function DashboardPenyewa() {
               </div>
             )}
           </div>
-        </div>
+        </Panel>
       )}
 
       {/* ================= TABEL TAGIHAN & PENGUMUMAN KOS ================= */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-        <div className="lg:col-span-7 bg-white rounded-2xl shadow-sm border border-gray-200/80 overflow-hidden">
-          <div className="bg-[#264624] text-white px-5 py-3 flex items-center justify-between">
-            <h3 className="font-serif text-sm sm:text-base font-bold">
-              Tagihan Sewa Perlu Dibayar
-            </h3>
+        <Panel
+          title="Tagihan Sewa Perlu Dibayar"
+          className="lg:col-span-7"
+          bodyClassName="px-0 sm:px-0"
+          action={
             <Link
               to="/penyewa/tagihan"
-              className="text-xs text-green-100 hover:text-white underline"
+              className="text-xs text-[#264624] font-semibold hover:underline"
             >
               Semua Tagihan →
             </Link>
-          </div>
+          }
+        >
           {tagihanBelumBayar.length === 0 ? (
             <p className="text-xs text-gray-400 py-8 text-center">
               Semua tagihan sewa Anda sudah lunas
             </p>
           ) : (
-            <Table
-              headers={["Kode", "Periode", "Jatuh Tempo", "Nominal", "Aksi"]}
-            >
+            <Table headers={["Kode", "Periode", "Jatuh Tempo", "Nominal", "Aksi"]}>
               {tagihanBelumBayar.map((t) => (
                 <tr key={t.id}>
-                  <td className="px-4 py-3 font-mono text-xs font-bold">
+                  <td className="px-4 py-3 font-mono text-xs font-bold text-gray-800">
                     {t.kode_tagihan}
                   </td>
                   <td className="px-4 py-3 text-xs">
-                    {formatTanggal(t.periode_mulai)} -{" "}
-                    {formatTanggal(t.periode_selesai)}
+                    {formatTanggal(t.periode_mulai)} - {formatTanggal(t.periode_selesai)}
                   </td>
                   <td className="px-4 py-3 text-xs">
                     {formatTanggal(t.tanggal_jatuh_tempo)}
@@ -341,25 +414,23 @@ export default function DashboardPenyewa() {
                   <td className="px-4 py-3">
                     <Link
                       to={`/penyewa/pembayaran/create/${t.id}`}
-                      className="px-3 py-1 rounded-lg bg-[#264624] hover:bg-[#3b6e38] text-white text-xs font-bold whitespace-nowrap"
+                      className="px-3 py-1.5 rounded-lg bg-[#264624] hover:bg-[#3b6e38] text-white text-xs font-bold whitespace-nowrap cursor-pointer shadow-2xs"
                     >
-                      Bayar (Cash/Transfer)
+                      Bayar (Cash / Transfer)
                     </Link>
                   </td>
                 </tr>
               ))}
             </Table>
           )}
-        </div>
+        </Panel>
 
-        <div className="lg:col-span-5 bg-white rounded-2xl shadow-sm border border-gray-200/80 overflow-hidden">
-          <div className="bg-[#b7d4a8] text-[#1e3a1c] px-5 py-3 flex items-center justify-between">
-            <h3 className="font-serif text-sm sm:text-base font-extrabold">
-              Pengumuman Kos Terbaru
-            </h3>
-            <StatusBadge status="terbit" />
-          </div>
-          <div className="p-4 space-y-3">
+        <Panel
+          title="Pengumuman Kos Terbaru"
+          className="lg:col-span-5"
+          action={<StatusBadge status="terbit" />}
+        >
+          <div className="space-y-3 pt-1">
             {pengumuman.length === 0 ? (
               <p className="text-xs text-gray-400 py-6 text-center">
                 Belum ada pengumuman terbaru
@@ -368,24 +439,24 @@ export default function DashboardPenyewa() {
               pengumuman.slice(0, 4).map((p) => (
                 <div
                   key={p.id}
-                  className="p-3 rounded-xl bg-[#f4f8f1] border border-[#dfecd8]"
+                  className="p-3.5 rounded-xl bg-[#f4f8f1] border border-[#dfecd8] space-y-1"
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <h4 className="text-xs sm:text-sm font-bold text-gray-900">
+                    <h4 className="text-xs sm:text-sm font-bold text-gray-900 truncate">
                       {p.judul}
                     </h4>
-                    <span className="text-[10px] text-gray-500">
+                    <span className="text-[10px] text-gray-500 whitespace-nowrap">
                       {formatTanggal(p.tanggal_publikasi)}
                     </span>
                   </div>
-                  <p className="text-xs text-gray-600 mt-1 line-clamp-2">
+                  <p className="text-xs text-gray-600 line-clamp-2 leading-relaxed">
                     {p.isi}
                   </p>
                 </div>
               ))
             )}
           </div>
-        </div>
+        </Panel>
       </div>
 
       {/* Modal Booking Kamar */}
